@@ -57,6 +57,10 @@ export class Stack {
 
     workspace: number;
 
+    former_monitor: null | number = null;
+
+    former_workspace: null | number = null;
+
     buttons: a.Arena<St.Button> = new Arena();
 
     tabs_height: number = TAB_HEIGHT;

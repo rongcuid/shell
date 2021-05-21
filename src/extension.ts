@@ -22,7 +22,6 @@ import * as Executor from 'executor';
 import * as movement from 'movement';
 import * as stack from 'stack';
 import * as add_exception from 'dialog_add_exception';
-import * as exec from 'executor';
 import * as dbus_service from 'dbus_service';
 
 import type { Entity } from 'ecs';
@@ -44,6 +43,7 @@ const { Gio, Meta, St } = imports.gi;
 const { GlobalEvent, WindowEvent } = Events;
 const { cursor_rect, is_move_op } = Lib;
 const { layoutManager, loadTheme, overview, panel, setThemeStylesheet, screenShield, sessionMode } = imports.ui.main;
+const { LayoutManager } = imports.ui.layout;
 const { ScreenShield } = imports.ui.screenShield;
 const Tags = Me.imports.tags;
 
@@ -56,10 +56,6 @@ enum Style { Light, Dark }
 interface Display {
     area: Rectangle;
     ws: Rectangle;
-}
-
-interface Monitor extends Rectangular {
-    index: number;
 }
 
 interface Injection {
@@ -104,9 +100,6 @@ export class Ext extends Ecs.System<ExtEvent> {
 
     /** The currently-loaded theme variant */
     current_style: Style = this.settings.is_dark_shell() ? Style.Dark : Style.Light;
-
-    /** Set when the display configuration has been triggered for execution */
-    displays_updating: SignalID | null = null;
 
     /** Row size in snap-to-grid */
     row_size: number = 32;
@@ -162,7 +155,13 @@ export class Ext extends Ecs.System<ExtEvent> {
     /** Set when a window is being moved by the mouse */
     moved_by_mouse: boolean = false
 
+    // /** Ignore any window movements while active */
+    // private disable_moves: boolean = false
+
     private workareas_update: null | SignalID = null
+
+    /** Set when the display configuration has been triggered for execution */
+    private displays_updating: SignalID | null = null;
 
     /** Record of misc. global objects and their attached signals */
     private signals: Map<GObject.Object, Array<SignalID>> = new Map();
@@ -359,7 +358,7 @@ export class Ext extends Ecs.System<ExtEvent> {
                         break;
 
                     case GlobalEvent.MonitorsChanged:
-                        this.update_display_configuration(false);
+                        this.update_display_configuration();
                         break;
 
                     case GlobalEvent.OverviewShown:
@@ -689,7 +688,13 @@ export class Ext extends Ecs.System<ExtEvent> {
         const screen_unlock_fn = ScreenShield.prototype['deactivate'];
         this.inject(ScreenShield.prototype, 'deactivate', (args: any) => {
             screen_unlock_fn.apply(screenShield, [args]);
-            this.update_display_configuration(true);
+            this.update_display_configuration();
+        })
+
+        const update_monitors_fn = LayoutManager.prototype['_updateMonitors']
+        this.inject(LayoutManager.prototype, '_updateMonitors', () => {
+            update_monitors_fn.apply(layoutManager)
+            this.update_display_configuration()
         })
     }
 
@@ -1671,7 +1676,7 @@ export class Ext extends Ecs.System<ExtEvent> {
         }
 
         this.connect(display, 'workareas-changed', () => {
-            this.update_display_configuration(true);
+            this.update_display_configuration();
         });
 
         this.size_changed_signal = this.connect(wim, 'size-change', (_, actor, event, _before, _after) => {
@@ -1715,10 +1720,6 @@ export class Ext extends Ecs.System<ExtEvent> {
             });
         }
 
-        this.connect(layoutManager, 'monitors-changed', () => {
-            this.register(Events.global(GlobalEvent.MonitorsChanged));
-        });
-
         this.connect(sessionMode, 'updated', () => {
             if (indicator) {
                 indicator.button.visible = !sessionMode.isLocked;
@@ -1743,7 +1744,7 @@ export class Ext extends Ecs.System<ExtEvent> {
 
         // We have to connect this signal in an idle_add; otherwise work areas stop being calculated
         this.register_fn(() => {
-            if (screenShield?.locked) this.update_display_configuration(false);
+            if (screenShield?.locked) this.update_display_configuration();
 
             this.connect(display, 'notify::focus-window', () => {
                 const window = this.focus_window()
@@ -2005,13 +2006,14 @@ export class Ext extends Ecs.System<ExtEvent> {
         this.moved_by_mouse = false
     }
 
-    update_display_configuration_before() {
-
-    }
-
-    update_display_configuration(workareas_only: boolean) {
+    // Any change that alters displays or workspaces will trigger this method to
+    // retile every tree with their new dimensions, and find new locations for
+    // trees that have been shifted to another display.
+    update_display_configuration() {
         if (!this.auto_tiler || sessionMode.isLocked) return
 
+        // This check is here for scenarios where a double-update is issued where
+        // we need to ignore the first message
         if (this.ignore_display_update) {
             this.ignore_display_update = false
             return
@@ -2022,6 +2024,9 @@ export class Ext extends Ecs.System<ExtEvent> {
 
         const primary_display = global.display.get_primary_monitor()
 
+        // If the primary display does not have a monitor geometry, or a work area,
+        // or the geometry and work area are the same, then the primary display
+        // is still loading.
         const primary_display_ready = (ext: Ext): boolean => {
             const area = global.display.get_monitor_geometry(primary_display)
             const work_area = ext.monitor_work_area(primary_display)
@@ -2031,6 +2036,7 @@ export class Ext extends Ecs.System<ExtEvent> {
             return !(area.width === work_area.width && area.height === work_area.height)
         }
 
+        // If any display has negative dimensions, then displays haven't been fully initialized yet
         function displays_ready(): boolean {
             const monitors = global.display.get_n_monitors()
 
@@ -2047,13 +2053,14 @@ export class Ext extends Ecs.System<ExtEvent> {
             return true
         }
 
+        // If displays haven't been initialized yet, come back later
         if (!displays_ready() || !primary_display_ready(this)) {
             if (this.displays_updating !== null) return
             if (this.workareas_update !== null) GLib.source_remove(this.workareas_update)
 
             this.workareas_update = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
                 this.register_fn(() => {
-                    this.update_display_configuration(workareas_only)
+                    this.update_display_configuration()
                 })
 
                 this.workareas_update = null
@@ -2064,171 +2071,133 @@ export class Ext extends Ecs.System<ExtEvent> {
             return
         }
 
-        // Update every tree on each display with the new dimensions
-        const update_tiling = () => {
-            if (!this.auto_tiler) return
-
-            for (const f of this.auto_tiler.forest.forks.values()) {
-                if (!f.is_toplevel) continue
-
-                const display = this.monitor_work_area(f.monitor)
-
-                if (display) {
-                    const area = new Rect.Rectangle([display.x, display.y, display.width, display.height])
-
-                    f.smart_gapped = false
-                    f.set_area(area.clone());
-                    this.auto_tiler.update_toplevel(this, f, f.monitor, this.settings.smart_gaps());
-                }
-            }
-        }
-
-        type Migration = [Fork, number, Rectangle, boolean]
-
-        let migrations: Array<Migration> = new Array()
-
-        const apply_migrations = (assigned_monitors: Set<number>) => {
-            if (!migrations) return
-
-            new exec.OnceExecutor<Migration, Migration[]>(migrations)
-                .start(
-                    500,
-                    ([fork, new_monitor, workspace, find_workspace]) => {
-                        let new_workspace
-
-                        if (find_workspace) {
-                            if (assigned_monitors.has(new_monitor)) {
-                                [new_workspace] = this.find_unused_workspace(new_monitor)
-                            } else {
-                                assigned_monitors.add(new_monitor)
-                                new_workspace = 0
-                            }
-                        } else {
-                            new_workspace = fork.workspace
-                        }
-
-                        fork.migrate(this, forest, workspace, new_monitor, new_workspace);
-                        fork.set_ratio(fork.length() / 2)
-
-                        return true
-                    },
-                    () => update_tiling()
-            )
-        }
-
-        function mark_for_reassignment(ext: Ext, fork: Ecs.Entity) {
-            for (const win of forest.iter(fork, node.NodeKind.WINDOW)) {
-                if (win.inner.kind === 2) {
-                    const entity = win.inner.entity
-                    const window = ext.windows.get(entity)
-                    if (window) window.reassignment = true
-                }
-            }
-        }
-
-        const [ old_primary, old_displays ] = this.displays
-
-        const changes = new Map<number, number>()
-
-        // Records which display's windows were moved to what new display's ID
-        for (const [entity, w] of this.windows.iter()) {
-            if (!w.actor_exists()) continue
-
-            this.monitors.with(entity, ([mon,]) => {
-                const assignment = mon === old_primary ? primary_display : w.meta.get_monitor()
-                changes.set(mon, assignment)
-            })
-        }
-
-        // Fetch a new list of monitors
-        const updated = new Map()
-
-        for (const monitor of layoutManager.monitors) {
-            const mon = monitor as Monitor
-
-            const area = new Rect.Rectangle([mon.x, mon.y, mon.width, mon.height])
-            const ws = this.monitor_work_area(mon.index)
-
-            updated.set(mon.index, { area, ws })
-        }
-
         const forest = this.auto_tiler.forest
 
-        if (old_displays.size === updated.size) {
-            update_tiling()
+        // Determins which monitor and workspace that a tree was moved onto
+        const locate_new_monitor = (f: Fork): null | [number, number] => {
+            const fetch = (entity: Entity): null | [number, number] => {
+                const win = this.windows.get(entity)
+                return win ? [win.meta.get_monitor(), win.meta.get_workspace().index()] : null
+            }
 
-            this.displays = [primary_display, updated]
-
-            return
-        }
-
-        this.displays = [primary_display, updated]
-
-        if (utils.map_eq(old_displays, updated)) {
-            return
-        }
-
-        if (this.displays_updating !== null) GLib.source_remove(this.displays_updating)
-
-        if (this.workareas_update !== null) {
-            GLib.source_remove(this.workareas_update)
-            this.workareas_update = null
-        }
-
-        // Delay actions in case of temporary connection loss
-        this.displays_updating = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
-            (() => {
-                if (!this.auto_tiler) return
-
-                const toplevels = new Array()
-                const assigned_monitors = new Set<number>()
-
-                for (const [old_mon, new_mon] of changes) {
-                    if (old_mon === new_mon) assigned_monitors.add(new_mon)
+            for (const n of forest.iter(f.entity)) {
+                if (n.inner.kind === 2) {
+                    return fetch(n.inner.entity)
+                } else if (n.inner.kind === 3) {
+                    return fetch(n.inner.entities[0])
                 }
+            }
 
-                for (const f of forest.forks.values()) {
-                    if (f.is_toplevel) {
-                        toplevels.push(f)
+            return null
+        }
 
-                        let migration: null | [Fork, number, Rectangle, boolean] = null;
+        const at = this.auto_tiler
 
-                        const displays = this.displays[1]
+        // Retiles a tree to ensure that it has been tiled with the new display's work area
+        const update_work_areas = (f: Fork, monitor: number) => {
+            const display = this.monitor_work_area(monitor)
+            if (display) {
+                const area = new Rect.Rectangle([display.x, display.y, display.width, display.height])
 
-                        for (const [old_monitor, new_monitor] of changes) {
-                            const display = displays.get(new_monitor)
+                f.smart_gapped = false
+                f.set_area(area.clone());
+                at.update_toplevel(this, f, f.monitor, this.settings.smart_gaps());
+            }
+        }
 
-                            if (!display) continue
+        // Updates the monitor and workspace association of a fork or stack
+        const associate = (object: null | any, monitor: number, workspace: number) => {
+            if (object) {
+                object.former_monitor = object.monitor
+                object.monitor = monitor
+                object.former_workspace = object.workspace
+                object.workspace = workspace
+            }
+        }
 
-                            if (f.monitor === old_monitor) {
-                                f.monitor = new_monitor
-                                f.workspace = 0
-                                migration = [f, new_monitor, display.ws, true]
-                            }
-                        }
+        // Updates the window's monitor association and ensures it is on its designated workspace
+        const place_window = (window: Entity, monitor: number, workspace: number) => {
+            const win = this.windows.get(window);
+            if (win) {
+                win.meta.change_workspace_by_index(workspace, true);
+                this.monitors.insert(window, [monitor, workspace])
+            }
+        }
 
-                        if (!migration) {
-                            const display = displays.get(f.monitor)
-                            if (display) {
-                                migration = [f, f.monitor, display.ws, false]
-                            }
-                        }
+        // Migrates windows within a tree to the new monitor and workspace
+        const migrate = (fork: Fork, monitor: number, workspace: number) => {
+            assigned.push([monitor, workspace])
 
-                        if (migration) {
-                            mark_for_reassignment(this, migration[0].entity)
-                            migrations.push(migration)
-                        }
+            fork.monitor = monitor
+            fork.workspace = workspace
+
+            // Update monitor associations
+            for (const n of forest.iter(fork.entity)) {
+                if (n.inner.kind === 1) {
+                    associate(forest.forks.get(n.inner.entity), monitor, workspace)
+                } else if (n.inner.kind === 2) {
+                    place_window(n.inner.entity, monitor, workspace)
+                } else if (n.inner.kind === 3) {
+                    associate(forest.stacks.get(n.inner.idx), monitor, workspace)
+
+                    for (const win of n.inner.entities) {
+                        place_window(win, monitor, workspace)
+                    }
+                }
+            }
+
+            update_work_areas(fork, monitor)
+        }
+
+        // Trees that were not forced to leave their display
+        const assigned = new Array<[number, number]>()
+
+        // Trees that are in a migratory state after a display was removed
+        const moved = new Array<[Fork, number]>()
+
+        // Trees which shall be moved back to their original display
+        const restored = new Array<[Fork, [number, number]]>()
+
+        // First iteration will sort trees between assigned, moved, and restored.
+        for (const f of forest.forks.values()) {
+            if (!f.is_toplevel) continue
+
+            const located = locate_new_monitor(f)
+            if (located !== null) {
+                if (f.former_monitor !== null && f.former_workspace !== null) {
+                    if (f.former_monitor < layoutManager.monitors.length) {
+                        restored.push([f, [f.former_monitor, f.former_workspace]])
+                        continue
                     }
                 }
 
-                apply_migrations(assigned_monitors)
+                if (f.monitor === located[0] && f.workspace === located[1]) {
+                    assigned.push(located)
+                    update_work_areas(f, f.monitor)
+                } else {
+                    moved.push([f, located[0]])
+                }
+            }
+        }
 
-                return
-            })()
+        // Then we will restore trees that can be restored
+        for (const [fork, [monitor, workspace]] of restored) {
+            fork.former_monitor = null
+            fork.former_workspace = null
+            migrate(fork, monitor, workspace)
+        }
 
-            this.displays_updating = null
-            return false
-        })
+        // Then finding new homes for trees that were displaced
+        for (const [fork, monitor] of moved) {
+            let workspace = 0
+            for (const [assigned_monitor, assigned_workspace] of assigned) {
+                if (assigned_monitor === monitor && workspace <= assigned_workspace) {
+                    workspace = assigned_workspace + 1
+                }
+            }
+
+            migrate(fork, monitor, workspace)
+        }
     }
 
     update_scale() {

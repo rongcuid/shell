@@ -28,13 +28,17 @@ export class Fork {
     area: Rectangle;
     entity: Entity;
     on_primary_display: boolean;
-    workspace: number;
     length_left: number;
     prev_length_left: number;
     prev_ratio: number = 0.5;
-    monitor: number;
     minimum_ratio: number = 0.1;
     orientation: Lib.Orientation = Lib.Orientation.HORIZONTAL;
+
+    monitor: number;
+    workspace: number;
+
+    former_monitor: null | number = null;
+    former_workspace: null | number = null;
 
     orientation_changed: boolean = false;
     is_toplevel: boolean = false;
