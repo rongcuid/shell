@@ -1,21 +1,23 @@
 //@ts-ignore
 const Me = imports.misc.extensionUtils.getCurrentExtension();
 
-const { Clutter, Gio, GLib, Meta } = imports.gi;
-
 import * as app_info from 'app_info';
+import * as DedicatedGPU from 'dedicated_gpu';
 import * as error from 'error';
+import * as launch from 'launcher_service';
+import * as levenshtein from 'levenshtein';
 import * as lib from 'lib';
 import * as log from 'log';
+import * as plugins from 'launcher_plugins';
 import * as result from 'result';
 import * as search from 'dialog_search';
-import * as launch from 'launcher_service';
-import * as plugins from 'launcher_plugins';
-import * as levenshtein from 'levenshtein';
+import * as rect from 'rectangle';
 
-import type { ShellWindow } from 'window';
-import type { Ext } from 'extension';
 import type { AppInfo } from 'app_info';
+import type { Ext } from 'extension';
+import type { ShellWindow } from 'window';
+
+const { Clutter, Gio, GLib, Meta } = imports.gi
 
 const { OK } = result;
 
@@ -42,7 +44,7 @@ export class Launcher extends search.Search {
     desktop_apps: Array<[string, AppInfo]>
     service: launch.LauncherService
     last_plugin: null | plugins.Plugin.Source
-    mode: number;
+    mode: number
 
     constructor(ext: Ext) {
         let cancel = () => {
@@ -114,14 +116,18 @@ export class Launcher extends search.Search {
                 if (retain) {
                     const generic = app.generic_name();
 
-                    this.options.push(new launch.SearchOption(
+                    const button = new launch.SearchOption(
                         app.name(),
                         generic ? generic + " — " + where : where,
                         'application-default-symbolic',
                         { gicon: app.icon() },
                         this.icon_size(),
                         { app }
-                    ))
+                    )
+
+                    DedicatedGPU.addPopup(app, button.widget)
+
+                    this.options.push(button)
                 }
             }
 
@@ -262,6 +268,27 @@ export class Launcher extends search.Search {
         this.options = new Array()
         this.desktop_apps = new Array();
         this.mode = -1;
+
+        const id = global.stage.connect('event', (_actor: any, event: any) => {
+            const { width, height } = this.dialog.dialogLayout._dialog;
+            const { x, y } = this.dialog.dialogLayout
+            const area = new rect.Rectangle([x, y, width, height]);
+
+            const close = this.dialog.visible
+                && (event.type() == Clutter.EventType.BUTTON_PRESS)
+                && !area.contains(lib.cursor_rect())
+
+            if (close) {
+                cancel()
+                this.close()
+            }
+
+            return Clutter.EVENT_PROPAGATE;
+        })
+
+        this.dialog.connect('destroy', () => {
+            global.stage.disconnect(id)
+        })
     }
 
     clear(){
