@@ -158,7 +158,7 @@ export class Launcher extends search.Search {
             this.options = windows.concat(this.options)
 
             // Truncate excess items from the list
-            this.options.splice(this.list_max());
+            this.options.splice(this.list_max);
 
             return this.options;
         };
@@ -334,7 +334,7 @@ export class Launcher extends search.Search {
         for (const window of ext.tab_list(Meta.TabList.NORMAL, null)) {
             if (show_all_workspaces || window.workspace_id() === active) {
                 this.options.push(window_selection(ext, window, this.icon_size()))
-                if (this.options.length == this.list_max()) break;
+                if (this.options.length == this.list_max) break;
             }
         }
     }
