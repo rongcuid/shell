@@ -106,7 +106,7 @@ export class Launcher extends search.Search {
             }
 
             // Filter matching desktop apps
-            for (const [where, app] of this.desktop_apps) {
+            if (pattern.length > 1) for (const [where, app] of this.desktop_apps) {
                 const retain = contains_pattern(app.name(), needles)
                     || contains_pattern(app.desktop_name, needles)
                     || lib.ok(app.generic_name(), (s) => contains_pattern(s, needles))
