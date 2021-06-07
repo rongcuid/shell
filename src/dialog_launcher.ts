@@ -137,16 +137,21 @@ export class Launcher extends search.Search {
 
                 const pattern_lower = pattern.toLowerCase()
 
-                let a_name_weight = levenshtein.compare(pattern_lower, a_name)
+                let a_name_weight = 0, b_name_weight = 0;
 
-                let b_name_weight = levenshtein.compare(pattern_lower, b_name)
-
-                if (a.description) {
-                    a_name_weight = Math.min(a_name_weight, levenshtein.compare(pattern_lower, a.description.toLowerCase()))
+                if (!a_name.startsWith(pattern_lower)) {
+                    a_name_weight = levenshtein.compare(pattern_lower, a_name)
+                    if (a.description) {
+                        a_name_weight = Math.min(a_name_weight, levenshtein.compare(pattern_lower, a.description.toLowerCase()))
+                    }
                 }
 
-                if (b.description) {
-                    b_name_weight = Math.min(b_name_weight, levenshtein.compare(pattern_lower, b.description.toLowerCase()))
+                if (!b_name.startsWith(pattern_lower)) {
+                    b_name_weight = levenshtein.compare(pattern_lower, b_name)
+
+                    if (b.description) {
+                        b_name_weight = Math.min(b_name_weight, levenshtein.compare(pattern_lower, b.description.toLowerCase()))
+                    }
                 }
 
                 return a_name_weight > b_name_weight ? 1 : 0
