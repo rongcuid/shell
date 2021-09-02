@@ -82,7 +82,7 @@ export class Search {
             })
         });
 
-        this.text.connect("key-press-event", (self: any, event: any) => {
+        this.text.connect("key-press-event", (_: any, event: any) => {
             // Prevents key repeat events
             if (event.get_flags() != Clutter.EventFlags.NONE) {
                 return;

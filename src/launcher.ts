@@ -51,7 +51,6 @@ export class Launcher extends search.Search {
         }
 
         this.select = (id: number) => {
-            log.log(">>>>>> SELECT >>>>>>")
             ext.overlay.visible = false
 
             if (id >= this.options.size) return
@@ -70,7 +69,6 @@ export class Launcher extends search.Search {
                     ext.overlay.visible = true
                 }
             }
-            log.log("<<<<<< SELECT <<<<<<")
         }
 
         this.activate_id = (id: number) => {
