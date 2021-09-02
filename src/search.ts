@@ -35,12 +35,12 @@ export class Search {
     private scroller: St.Widget;
     private children_to_abandon: any = null;
 
-    activate_id: (index: number) => void = () => {}
-    cancel: () => void = () => {}
-    complete: () => void = () => {}
-    search: (search: string) => void = () => {}
-    select: (id: number) => void = () => {}
-    quit: (id: number) => void = () => {}
+    activate_id: (index: number) => void = () => { }
+    cancel: () => void = () => { }
+    complete: () => void = () => { }
+    search: (search: string) => void = () => { }
+    select: (id: number) => void = () => { }
+    quit: (id: number) => void = () => { }
 
     constructor() {
         this.active_id = 0;
@@ -65,7 +65,6 @@ export class Search {
             if (text_changed !== null) GLib.source_remove(text_changed)
 
             const text = (entry as Clutter.Text).get_text().trim()
-
             const update = () => {
                 this.clear()
                 this.search(text)
@@ -84,20 +83,26 @@ export class Search {
         });
 
         this.text.connect("key-press-event", (_: any, event: any) => {
+            log("====== KEY-PRESSED ======")
+            log("key-press-event: ", event)
+
             // Prevents key repeat events
             if (event.get_flags() != Clutter.EventFlags.NONE) {
+                log("key-press-event repeat")
                 return;
             }
 
             let c = event.get_key_symbol();
             if (c === 65307) {
                 // Escape key was pressed
+                log("key-press-event ESC")
                 this.reset();
                 this.close();
                 this.cancel();
                 return;
             } else if (c === 65289) {
                 // Tab was pressed, check for tab completion
+                log("key-press-event TAB")
                 this.complete()
                 return;
             }
@@ -105,6 +110,7 @@ export class Search {
             let s = event.get_state();
             if (c == 65362 || c == 65056 || (s == Clutter.ModifierType.CONTROL_MASK && c == 107) || (s == Clutter.ModifierType.CONTROL_MASK && c == 112)) {
                 // Up arrow or left tab was pressed
+                log("key-press-event UP/LTAB")
                 if (0 < this.active_id) {
                     this.select_id(this.active_id - 1)
                 }
@@ -113,6 +119,7 @@ export class Search {
                 }
             } else if (c == 65364 || c == 65289 || (s == Clutter.ModifierType.CONTROL_MASK && c == 106) || (s == Clutter.ModifierType.CONTROL_MASK && c == 110)) {
                 // Down arrow or tab was pressed
+                log("key-press-event DOWN/TAB")
                 if (this.active_id + 1 < this.widgets.length) {
                     this.select_id(this.active_id + 1)
                 }
@@ -120,38 +127,48 @@ export class Search {
                     this.select_id(0)
                 }
             } else if (s == Clutter.ModifierType.CONTROL_MASK && c == 49) {
+                log("key-press-event 0")
                 this.activate_id(0)
                 return
             } else if (s == Clutter.ModifierType.CONTROL_MASK && c == 50) {
+                log("key-press-event 1")
                 this.activate_id(1)
                 return
             } else if (s == Clutter.ModifierType.CONTROL_MASK && c == 51) {
+                log("key-press-event 2")
                 this.activate_id(2)
                 return
             } else if (s == Clutter.ModifierType.CONTROL_MASK && c == 52) {
+                log("key-press-event 3")
                 this.activate_id(3)
                 return
             } else if (s == Clutter.ModifierType.CONTROL_MASK && c == 53) {
+                log("key-press-event 4")
                 this.activate_id(4)
                 return
             } else if (s == Clutter.ModifierType.CONTROL_MASK && c == 54) {
+                log("key-press-event 5")
                 this.activate_id(5)
                 return
             } else if (s == Clutter.ModifierType.CONTROL_MASK && c == 55) {
+                log("key-press-event 6")
                 this.activate_id(6)
                 return
             } else if (s == Clutter.ModifierType.CONTROL_MASK && c == 56) {
+                log("key-press-event 7")
                 this.activate_id(7)
                 return
             } else if (s == Clutter.ModifierType.CONTROL_MASK && c == 57) {
+                log("key-press-event 8")
                 this.activate_id(8)
                 return
             } else if (s == Clutter.ModifierType.CONTROL_MASK && c == 113) {
                 // Ctrl + Q shall quit the selected application
+                log("key-press-event C-Q")
                 this.quit(this.active_id)
                 return
             }
-
+            log("key-press-event (unknown)", this.active_id)
             this.select(this.active_id);
         });
 
@@ -189,8 +206,12 @@ export class Search {
             return Clutter.EVENT_PROPAGATE;
         })
 
-        this.dialog.connect('closed', () => this.cancel())
-        this.dialog.connect('destroy', () => global.stage.disconnect(id))
+        this.dialog.connect('closed', () => {
+            this.cancel()
+        })
+        this.dialog.connect('destroy', () => {
+            global.stage.disconnect(id)
+        })
     }
 
     cleanup() {
@@ -301,7 +322,7 @@ export class Search {
         widget.connect('clicked', () => this.activate_id(id))
         widget.connect('notify::hover', () => {
             const { x, y } = Lib.cursor_rect()
-            if ( x === initial_cursor.x && y === initial_cursor.y) return
+            if (x === initial_cursor.x && y === initial_cursor.y) return
             this.select_id(id)
             this.select(id)
         })
@@ -352,7 +373,7 @@ export class SearchOption {
     shortcut: St.Widget = new St.Label({ text: "", y_align: Clutter.ActorAlign.CENTER, style: "padding-left: 6px;padding-right: 6px" })
 
     constructor(ext: Ext, title: string, description: null | string, category_icon: null | JsonIPC.IconSource, icon: null | JsonIPC.IconSource, icon_size: number,
-                exec: null | string, keywords: null | Array<string>) {
+        exec: null | string, keywords: null | Array<string>) {
         this.title = title
         this.description = description
         this.exec = exec
