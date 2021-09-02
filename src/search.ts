@@ -82,10 +82,9 @@ export class Search {
             })
         });
 
-        this.text.connect("key-press-event", (_: any, event: any) => {
+        this.text.connect("key-press-event", (self: any, event: any) => {
             log("====== KEY-PRESSED ======")
-            log("key-press-event: ", event)
-
+            log("key-press-event: ", self, event)
             // Prevents key repeat events
             if (event.get_flags() != Clutter.EventFlags.NONE) {
                 log("key-press-event repeat")
