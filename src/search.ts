@@ -35,12 +35,12 @@ export class Search {
     private scroller: St.Widget;
     private children_to_abandon: any = null;
 
-    activate_id: (index: number) => void = () => { }
-    cancel: () => void = () => { }
-    complete: () => void = () => { }
-    search: (search: string) => void = () => { }
-    select: (id: number) => void = () => { }
-    quit: (id: number) => void = () => { }
+    activate_id: (index: number) => void = () => {}
+    cancel: () => void = () => {}
+    complete: () => void = () => {}
+    search: (search: string) => void = () => {}
+    select: (id: number) => void = () => {}
+    quit: (id: number) => void = () => {}
 
     constructor() {
         this.active_id = 0;
@@ -65,6 +65,7 @@ export class Search {
             if (text_changed !== null) GLib.source_remove(text_changed)
 
             const text = (entry as Clutter.Text).get_text().trim()
+
             const update = () => {
                 this.clear()
                 this.search(text)
@@ -87,7 +88,7 @@ export class Search {
             if (event.get_flags() != Clutter.EventFlags.NONE) {
                 return;
             }
-            
+
             let c = event.get_key_symbol();
             if (c === 65307) {
                 // Escape key was pressed
@@ -150,6 +151,7 @@ export class Search {
                 this.quit(this.active_id)
                 return
             }
+
             this.select(this.active_id);
         });
 
@@ -187,12 +189,8 @@ export class Search {
             return Clutter.EVENT_PROPAGATE;
         })
 
-        this.dialog.connect('closed', () => {
-            this.cancel()
-        })
-        this.dialog.connect('destroy', () => {
-            global.stage.disconnect(id)
-        })
+        this.dialog.connect('closed', () => this.cancel())
+        this.dialog.connect('destroy', () => global.stage.disconnect(id))
     }
 
     cleanup() {
@@ -303,7 +301,7 @@ export class Search {
         widget.connect('clicked', () => this.activate_id(id))
         widget.connect('notify::hover', () => {
             const { x, y } = Lib.cursor_rect()
-            if (x === initial_cursor.x && y === initial_cursor.y) return
+            if ( x === initial_cursor.x && y === initial_cursor.y) return
             this.select_id(id)
             this.select(id)
         })
@@ -354,7 +352,7 @@ export class SearchOption {
     shortcut: St.Widget = new St.Label({ text: "", y_align: Clutter.ActorAlign.CENTER, style: "padding-left: 6px;padding-right: 6px" })
 
     constructor(ext: Ext, title: string, description: null | string, category_icon: null | JsonIPC.IconSource, icon: null | JsonIPC.IconSource, icon_size: number,
-        exec: null | string, keywords: null | Array<string>) {
+                exec: null | string, keywords: null | Array<string>) {
         this.title = title
         this.description = description
         this.exec = exec
