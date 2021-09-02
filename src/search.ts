@@ -83,14 +83,12 @@ export class Search {
         });
 
         this.text.connect("key-press-event", (self: any, event: any) => {
-            log("====== KEY-PRESSED ======")
             // Prevents key repeat events
             if (event.get_flags() != Clutter.EventFlags.NONE) {
                 return;
             }
             
             let c = event.get_key_symbol();
-            log("key-press-event: ", self, " + ", c)
             if (c === 65307) {
                 // Escape key was pressed
                 this.reset();
